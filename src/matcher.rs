@@ -4,27 +4,57 @@ use crate::ast::RegexNode;
 pub fn match_node(node: &RegexNode, input: &[char], pos: usize) -> Vec<usize> {
     match node {
         RegexNode::Literal(c) => {
-            if pos < input.len() && input[pos] == *c { vec![pos + 1] } else { vec![] }
+            if pos < input.len() && input[pos] == *c {
+                vec![pos + 1]
+            } else {
+                vec![]
+            }
         }
         RegexNode::Dot => {
-            if pos < input.len() { vec![pos + 1] } else { vec![] }
+            if pos < input.len() {
+                vec![pos + 1]
+            } else {
+                vec![]
+            }
         }
         RegexNode::Digit => {
-            if pos < input.len() && input[pos].is_digit(10) { vec![pos + 1] } else { vec![] }
+            if pos < input.len() && input[pos].is_digit(10) {
+                vec![pos + 1]
+            } else {
+                vec![]
+            }
         }
         RegexNode::Word => {
-            if pos < input.len() && (input[pos].is_alphanumeric() || input[pos] == '_') { vec![pos + 1] } else { vec![] }
+            if pos < input.len() && (input[pos].is_alphanumeric() || input[pos] == '_') {
+                vec![pos + 1]
+            } else {
+                vec![]
+            }
         }
         RegexNode::CharClass { chars, negated } => {
-            if pos >= input.len() { return vec![]; }
+            if pos >= input.len() {
+                return vec![];
+            }
             let contains = chars.contains(&input[pos]);
-            if (*negated && !contains) || (!*negated && contains) { vec![pos + 1] } else { vec![] }
+            if (*negated && !contains) || (!*negated && contains) {
+                vec![pos + 1]
+            } else {
+                vec![]
+            }
         }
         RegexNode::StartAnchor => {
-            if pos == 0 { vec![pos] } else { vec![] }
+            if pos == 0 {
+                vec![pos]
+            } else {
+                vec![]
+            }
         }
         RegexNode::EndAnchor => {
-            if pos == input.len() { vec![pos] } else { vec![] }
+            if pos == input.len() {
+                vec![pos]
+            } else {
+                vec![]
+            }
         }
         RegexNode::Seq(nodes) => {
             let mut positions = vec![pos];
@@ -34,7 +64,9 @@ pub fn match_node(node: &RegexNode, input: &[char], pos: usize) -> Vec<usize> {
                     let res = match_node(n, input, p);
                     next_positions.extend(res);
                 }
-                if next_positions.is_empty() { return vec![]; }
+                if next_positions.is_empty() {
+                    return vec![];
+                }
                 next_positions.sort_unstable();
                 next_positions.dedup();
                 positions = next_positions;
@@ -64,10 +96,14 @@ pub fn match_node(node: &RegexNode, input: &[char], pos: usize) -> Vec<usize> {
                 let mut frontier = match_node(inner, input, pos);
                 while !frontier.is_empty() {
                     for p in &frontier {
-                        if !results.contains(p) { results.push(*p); }
+                        if !results.contains(p) {
+                            results.push(*p);
+                        }
                     }
                     let mut next = Vec::new();
-                    for p in &frontier { next.extend(match_node(inner, input, *p)); }
+                    for p in &frontier {
+                        next.extend(match_node(inner, input, *p));
+                    }
                     next.sort_unstable();
                     next.dedup();
                     frontier = next;
