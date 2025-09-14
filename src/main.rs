@@ -31,32 +31,23 @@ fn match_character_group(input_char: char, pattern: &str) -> Option<(usize, bool
 // Matches a single token from the pattern against a single character from the input.
 // Returns a tuple of (length of the token in the pattern, whether it matches).
 fn match_token(input_char: char, pattern: &str) -> Option<(usize, bool)> {
-    if pattern.is_empty() {
-        return None;
+    match pattern.chars().next() {
+        None => None,
+        Some('\\') => {
+            if pattern.len() < 2 {
+                return None;
+            }
+            let escape_char = pattern.chars().nth(1).unwrap();
+            let matches = match escape_char {
+                'd' => input_char.is_digit(10),
+                'w' => input_char.is_alphanumeric() || input_char == '_',
+                _ => return None, // Unknown escape sequence
+            };
+            Some((2, matches))
+        }
+        Some('[') => match_character_group(input_char, pattern),
+        Some(first_char) => Some((1, first_char == input_char)),
     }
-
-    // Handle escaped characters like \d and \w
-    if pattern.starts_with('\\') {
-        if pattern.len() < 2 {
-            return None;
-        } // Incomplete escape sequence
-        let escape_char = pattern.chars().nth(1).unwrap();
-        let matches = match escape_char {
-            'd' => input_char.is_digit(10),
-            'w' => input_char.is_alphanumeric() || input_char == '_',
-            _ => return None, // Unknown escape sequence
-        };
-        return Some((2, matches));
-    }
-
-    // Handle character groups like [abc] or [^abc]
-    if pattern.starts_with('[') {
-        return match_character_group(input_char, pattern);
-    }
-
-    // Handle a literal character
-    let first_char = pattern.chars().next().unwrap();
-    Some((1, first_char == input_char))
 }
 
 // Recursively tries to match the rest of the pattern from the current position in the input.
