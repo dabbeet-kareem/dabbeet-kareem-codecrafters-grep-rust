@@ -2,23 +2,96 @@ use std::env;
 use std::io;
 use std::process;
 
-fn match_pattern(input_line: &str, pattern: &str) -> bool {
-    match pattern {
-        p if p.chars().count() == 1 => input_line.contains(p),
-        // Negative character group: [^...]
-        p if p.starts_with("[^") && p.ends_with(']') => {
-            let chars = p[2..p.len() - 1].chars().collect::<Vec<char>>();
-            input_line.chars().any(|c| !chars.contains(&c))
+// Handles matching for positive and negative character groups (e.g., [abc] and [^abc]).
+fn match_character_group(input_char: char, pattern: &str) -> Option<(usize, bool)> {
+    // Check if it's a negative character group (like [^abc])
+    let (is_negative, group_start_index) = if pattern.starts_with("[^") {
+        (true, 2)
+    } else {
+        (false, 1)
+    };
+
+    // Find the closing bracket to identify the characters in the group
+    if let Some(end_bracket_pos) = pattern[group_start_index..].find(']') {
+        let group_chars = &pattern[group_start_index..group_start_index + end_bracket_pos];
+        let token_len = group_start_index + end_bracket_pos + 1;
+        let is_in_group = group_chars.contains(input_char);
+
+        // Return the match result, inverting it for negative groups
+        if is_negative {
+            Some((token_len, !is_in_group))
+        } else {
+            Some((token_len, is_in_group))
         }
-        // Positive character group: [...]
-        p if p.starts_with('[') && p.ends_with(']') => {
-            let chars = p[1..p.len() - 1].chars().collect::<Vec<char>>();
-            input_line.chars().any(|c| chars.contains(&c))
-        }
-        "\\d" => input_line.chars().any(|c| c.is_digit(10)),
-        "\\w" => input_line.chars().any(|c| c.is_alphanumeric() || c == '_'),
-        _ => panic!("Unhandled pattern: {}", pattern),
+    } else {
+        None // Unmatched opening bracket
     }
+}
+
+// Matches a single token from the pattern against a single character from the input.
+// Returns a tuple of (length of the token in the pattern, whether it matches).
+fn match_token(input_char: char, pattern: &str) -> Option<(usize, bool)> {
+    if pattern.is_empty() {
+        return None;
+    }
+
+    // Handle escaped characters like \d and \w
+    if pattern.starts_with('\\') {
+        if pattern.len() < 2 {
+            return None;
+        } // Incomplete escape sequence
+        let escape_char = pattern.chars().nth(1).unwrap();
+        let matches = match escape_char {
+            'd' => input_char.is_digit(10),
+            'w' => input_char.is_alphanumeric() || input_char == '_',
+            _ => return None, // Unknown escape sequence
+        };
+        return Some((2, matches));
+    }
+
+    // Handle character groups like [abc] or [^abc]
+    if pattern.starts_with('[') {
+        return match_character_group(input_char, pattern);
+    }
+
+    // Handle a literal character
+    let first_char = pattern.chars().next().unwrap();
+    Some((1, first_char == input_char))
+}
+
+// Recursively tries to match the rest of the pattern from the current position in the input.
+fn match_substring(input: &[char], pattern: &str) -> bool {
+    // If the pattern is empty, we've successfully matched everything.
+    if pattern.is_empty() {
+        return true;
+    }
+    // If the input is empty but the pattern isn't, no match is possible.
+    if input.is_empty() {
+        return false;
+    }
+
+    // Try to match the first token of the pattern with the current character of the input.
+    if let Some((token_len, matches)) = match_token(input[0], pattern) {
+        if matches {
+            // If it matches, try to match the rest of the pattern with the rest of the input.
+            return match_substring(&input[1..], &pattern[token_len..]);
+        }
+    }
+
+    // If the token doesn't match, this substring attempt has failed.
+    false
+}
+
+// Tries to match the pattern at any position in the input line.
+fn match_pattern(input_line: &str, pattern: &str) -> bool {
+    let input_chars: Vec<char> = input_line.chars().collect();
+    // Iterate through the input string, treating each character as a potential start of a match.
+    for i in 0..input_chars.len() {
+        if match_substring(&input_chars[i..], pattern) {
+            return true;
+        }
+    }
+    false
 }
 
 // Usage: echo <input_text> | your_program.sh -E <pattern>
