@@ -163,6 +163,7 @@ fn token_matches(input_char: char, pattern_token: &str) -> bool {
                 .map(|(_, matched)| matched)
                 .unwrap_or(false)
         }
+        Some('.') => true, // '.' matches any single character
         Some(first_char) => first_char == input_char,
     }
 }
