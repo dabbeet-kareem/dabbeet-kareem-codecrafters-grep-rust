@@ -1,7 +1,10 @@
 use crate::ast::{RegexNode, RepeatKind};
 
 #[derive(Clone, Debug)]
-struct MatchState { pos: usize, captures: Vec<Option<(usize, usize)>> }
+struct MatchState {
+    pos: usize,
+    captures: Vec<Option<(usize, usize)>>,
+}
 
 fn max_group_id(node: &RegexNode) -> usize {
     match node {
@@ -16,28 +19,38 @@ fn match_with_state(node: &RegexNode, input: &[char], state: &MatchState) -> Vec
     match node {
         RegexNode::Literal(c) => {
             if state.pos < input.len() && input[state.pos] == *c {
-                let mut next = state.clone(); next.pos += 1; vec![next]
+                let mut next = state.clone();
+                next.pos += 1;
+                vec![next]
             } else {
                 vec![]
             }
         }
         RegexNode::Dot => {
             if state.pos < input.len() {
-                let mut next = state.clone(); next.pos += 1; vec![next]
+                let mut next = state.clone();
+                next.pos += 1;
+                vec![next]
             } else {
                 vec![]
             }
         }
         RegexNode::Digit => {
             if state.pos < input.len() && input[state.pos].is_digit(10) {
-                let mut next = state.clone(); next.pos += 1; vec![next]
+                let mut next = state.clone();
+                next.pos += 1;
+                vec![next]
             } else {
                 vec![]
             }
         }
         RegexNode::Word => {
-            if state.pos < input.len() && (input[state.pos].is_alphanumeric() || input[state.pos] == '_') {
-                let mut next = state.clone(); next.pos += 1; vec![next]
+            if state.pos < input.len()
+                && (input[state.pos].is_alphanumeric() || input[state.pos] == '_')
+            {
+                let mut next = state.clone();
+                next.pos += 1;
+                vec![next]
             } else {
                 vec![]
             }
@@ -48,7 +61,9 @@ fn match_with_state(node: &RegexNode, input: &[char], state: &MatchState) -> Vec
             }
             let contains = chars.contains(&input[state.pos]);
             if (*negated && !contains) || (!*negated && contains) {
-                let mut next = state.clone(); next.pos += 1; vec![next]
+                let mut next = state.clone();
+                next.pos += 1;
+                vec![next]
             } else {
                 vec![]
             }
@@ -72,19 +87,31 @@ fn match_with_state(node: &RegexNode, input: &[char], state: &MatchState) -> Vec
             let mut out = Vec::new();
             for mut ns in match_with_state(node, input, state) {
                 let end = ns.pos;
-                if *id < ns.captures.len() { ns.captures[*id] = Some((start, end)); }
+                if *id < ns.captures.len() {
+                    ns.captures[*id] = Some((start, end));
+                }
                 out.push(ns);
             }
             out
         }
         RegexNode::BackRef { id } => {
-            if *id >= state.captures.len() { return vec![]; }
+            if *id >= state.captures.len() {
+                return vec![];
+            }
             if let Some((s, e)) = state.captures[*id] {
                 let len = e - s;
-                if state.pos + len <= input.len() && input[s..e] == input[state.pos..state.pos+len] {
-                    let mut next = state.clone(); next.pos += len; vec![next]
-                } else { vec![] }
-            } else { vec![] }
+                if state.pos + len <= input.len()
+                    && input[s..e] == input[state.pos..state.pos + len]
+                {
+                    let mut next = state.clone();
+                    next.pos += len;
+                    vec![next]
+                } else {
+                    vec![]
+                }
+            } else {
+                vec![]
+            }
         }
         RegexNode::Seq(nodes) => {
             let mut states = vec![state.clone()];
@@ -124,10 +151,14 @@ fn match_with_state(node: &RegexNode, input: &[char], state: &MatchState) -> Vec
                 let mut frontier = match_with_state(inner, input, state);
                 while !frontier.is_empty() {
                     for st in &frontier {
-                        if !results.iter().any(|r| r.pos == st.pos) { results.push(st.clone()); }
+                        if !results.iter().any(|r| r.pos == st.pos) {
+                            results.push(st.clone());
+                        }
                     }
                     let mut next = Vec::new();
-                    for st in &frontier { next.extend(match_with_state(inner, input, st)); }
+                    for st in &frontier {
+                        next.extend(match_with_state(inner, input, st));
+                    }
                     next.sort_by_key(|s| s.pos);
                     next.dedup_by_key(|s| s.pos);
                     frontier = next;
@@ -140,6 +171,12 @@ fn match_with_state(node: &RegexNode, input: &[char], state: &MatchState) -> Vec
 
 pub fn match_node(node: &RegexNode, input: &[char], start: usize) -> Vec<usize> {
     let max_id = max_group_id(node);
-    let init = MatchState { pos: start, captures: vec![None; max_id + 1] };
-    match_with_state(node, input, &init).into_iter().map(|s| s.pos).collect()
+    let init = MatchState {
+        pos: start,
+        captures: vec![None; max_id + 1],
+    };
+    match_with_state(node, input, &init)
+        .into_iter()
+        .map(|s| s.pos)
+        .collect()
 }
