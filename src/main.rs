@@ -5,6 +5,11 @@ use std::process;
 fn match_pattern(input_line: &str, pattern: &str) -> bool {
     match pattern {
         p if p.chars().count() == 1 => input_line.contains(p),
+        // check if pattern start with [ and end with ]
+        p if p.starts_with('[') && p.ends_with(']') => {
+            let chars = p[1..p.len() - 1].chars().collect::<Vec<char>>();
+            input_line.chars().any(|c| chars.contains(&c))
+        }
         "\\d" => input_line.chars().any(|c| c.is_digit(10)),
         "\\w" => input_line.chars().any(|c| c.is_alphanumeric() || c == '_'),
         _ => panic!("Unhandled pattern: {}", pattern),
