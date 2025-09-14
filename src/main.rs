@@ -3,11 +3,12 @@ use std::io;
 use std::process;
 
 fn match_pattern(input_line: &str, pattern: &str) -> bool {
-    if pattern.chars().count() == 1 {
-        return input_line.contains(pattern);
-    } else {
-        panic!("Unhandled pattern: {}", pattern)
+    // check if the pattern is not empty
+    if pattern.is_empty() {
+        return false;
     }
+
+    return input_line.contains(pattern);
 }
 
 // Usage: echo <input_text> | your_program.sh -E <pattern>
