@@ -28,65 +28,128 @@ fn match_character_group(input_char: char, pattern: &str) -> Option<(usize, bool
     }
 }
 
-// Matches a single token from the pattern against a single character from the input.
-// Returns a tuple of (length of the token in the pattern, whether it matches).
-fn match_token(input_char: char, pattern: &str) -> Option<(usize, bool)> {
-    match pattern.chars().next() {
-        None => None,
-        Some('\\') => {
-            if pattern.len() < 2 {
-                return None;
+// Parses the next token from the pattern and returns its length.
+fn parse_token_len(pattern: &str) -> Option<usize> {
+    if pattern.is_empty() {
+        return None;
+    }
+
+    match pattern.chars().next().unwrap() {
+        '\\' => {
+            if pattern.len() >= 2 {
+                Some(2)
+            } else {
+                None // Incomplete escape sequence
             }
-            let escape_char = pattern.chars().nth(1).unwrap();
-            let matches = match escape_char {
+        }
+        '[' => {
+            let (_is_negative, group_start_index) = if pattern.starts_with("[^") {
+                (true, 2)
+            } else {
+                (false, 1)
+            };
+            if let Some(end_bracket_pos) = pattern[group_start_index..].find(']') {
+                Some(group_start_index + end_bracket_pos + 1)
+            } else {
+                None // Unmatched opening bracket
+            }
+        }
+        _ => Some(1), // Regular character
+    }
+}
+
+// Matches a single token from the pattern against a single character from the input.
+fn token_matches(input_char: char, pattern_token: &str) -> bool {
+    match pattern_token.chars().next() {
+        None => false,
+        Some('\\') => {
+            if pattern_token.len() < 2 {
+                return false;
+            }
+            let escape_char = pattern_token.chars().nth(1).unwrap();
+            match escape_char {
                 'd' => input_char.is_digit(10),
                 'w' => input_char.is_alphanumeric() || input_char == '_',
-                _ => return None, // Unknown escape sequence
-            };
-            Some((2, matches))
-        }
-        // match the ^ to check if the string starts with the pattern
-        Some('^') => {
-            if pattern.len() < 2 {
-                return None;
+                _ => false, // Unknown escape sequence
             }
-            let matches = pattern.chars().nth(1).unwrap() == input_char;
-            Some((2, matches))
         }
-        Some('[') => match_character_group(input_char, pattern),
-        Some(first_char) => Some((1, first_char == input_char)),
+        Some('[') => {
+            // Re-using match_character_group, but it returns more than we need.
+            // A simpler function could be used, but this works.
+            match_character_group(input_char, pattern_token)
+                .map(|(_, matched)| matched)
+                .unwrap_or(false)
+        }
+        Some(first_char) => first_char == input_char,
     }
 }
 
 // Recursively tries to match the rest of the pattern from the current position in the input.
-fn match_substring(input: &[char], pattern: &str) -> bool {
+fn match_substring(input: &str, pattern: &str) -> bool {
     // If the pattern is empty, we've successfully matched everything.
     if pattern.is_empty() {
         return true;
     }
-    // If the input is empty but the pattern isn't, no match is possible.
-    if input.is_empty() {
-        return false;
+
+    // Handle end-of-string anchor
+    if pattern == "$" {
+        return input.is_empty();
     }
 
-    // Try to match the first token of the pattern with the current character of the input.
-    if let Some((token_len, matches)) = match_token(input[0], pattern) {
-        if matches {
-            // If it matches, try to match the rest of the pattern with the rest of the input.
-            return match_substring(&input[1..], &pattern[token_len..]);
+    let Some(token_len) = parse_token_len(pattern) else {
+        return false; // Invalid pattern
+    };
+
+    let token = &pattern[..token_len];
+    let rest_of_pattern = &pattern[token_len..];
+
+    // Handle quantifiers
+    if let Some(quantifier) = rest_of_pattern.chars().next() {
+        if quantifier == '?' {
+            let pattern_after_quantifier = &rest_of_pattern[1..];
+            // 'zero' case: try to match the rest of the pattern without this token
+            if match_substring(input, pattern_after_quantifier) {
+                return true;
+            }
+            // 'one' case: match token once, then the rest
+            if !input.is_empty() && token_matches(input.chars().next().unwrap(), token) {
+                return match_substring(&input[1..], pattern_after_quantifier);
+            }
+            return false;
+        }
+
+        if quantifier == '+' {
+            let pattern_after_quantifier = &rest_of_pattern[1..];
+            // Must match at least once
+            if !input.is_empty() && token_matches(input.chars().next().unwrap(), token) {
+                let remaining_input = &input[1..];
+                // Greedily match more, or continue with the rest of the pattern
+                return match_substring(remaining_input, pattern)
+                    || match_substring(remaining_input, pattern_after_quantifier);
+            }
+            return false;
         }
     }
 
-    // If the token doesn't match, this substring attempt has failed.
+    // No quantifier, or not a quantifier we handle
+    if !input.is_empty() && token_matches(input.chars().next().unwrap(), token) {
+        return match_substring(&input[1..], rest_of_pattern);
+    }
+
     false
 }
 
 // Tries to match the pattern at any position in the input line.
 fn match_pattern(input_line: &str, pattern: &str) -> bool {
-    let input_chars: Vec<char> = input_line.chars().collect();
-    // Iterate through the input string, treating each character as a potential start of a match.
-    for i in 0..input_chars.len() {
-        if match_substring(&input_chars[i..], pattern) {
+    let mut pattern = pattern;
+
+    if pattern.starts_with('^') {
+        pattern = &pattern[1..];
+        return match_substring(input_line, pattern);
+    }
+
+    for i in 0..=input_line.len() {
+        if match_substring(&input_line[i..], pattern) {
             return true;
         }
     }
@@ -105,7 +168,10 @@ fn main() {
 
     io::stdin().read_line(&mut input_line).unwrap();
 
-    if match_pattern(&input_line, &pattern) {
+    // Trim trailing newline for correct '$' anchor matching
+    let trimmed_input = input_line.trim_end_matches('\n');
+
+    if match_pattern(trimmed_input, &pattern) {
         process::exit(0)
     } else {
         process::exit(1)
