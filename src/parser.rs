@@ -3,11 +3,22 @@ use crate::ast::{RegexNode, RepeatKind};
 pub struct Parser<'a> {
     pub pattern: &'a str,
     pub pos: usize,
+    next_group_id: usize,
 }
 
 impl<'a> Parser<'a> {
     pub fn new(pattern: &'a str) -> Self {
-        Self { pattern, pos: 0 }
+        Self {
+            pattern,
+            pos: 0,
+            next_group_id: 1,
+        }
+    }
+
+    fn alloc_group_id(&mut self) -> usize {
+        let id = self.next_group_id;
+        self.next_group_id += 1;
+        id
     }
 
     fn peek(&self) -> Option<char> {
@@ -63,11 +74,17 @@ impl<'a> Parser<'a> {
         match self.peek() {
             Some('?') => {
                 self.advance();
-                RegexNode::Repeat { node: Box::new(atom), kind: RepeatKind::ZeroOrOne }
+                RegexNode::Repeat {
+                    node: Box::new(atom),
+                    kind: RepeatKind::ZeroOrOne,
+                }
             }
             Some('+') => {
                 self.advance();
-                RegexNode::Repeat { node: Box::new(atom), kind: RepeatKind::OneOrMore }
+                RegexNode::Repeat {
+                    node: Box::new(atom),
+                    kind: RepeatKind::OneOrMore,
+                }
             }
             _ => atom,
         }
@@ -77,9 +94,13 @@ impl<'a> Parser<'a> {
         match self.peek() {
             Some('(') => {
                 self.advance();
+                let id = self.alloc_group_id();
                 let node = self.parse_alt();
                 let _ = self.expect(')');
-                node
+                RegexNode::Group {
+                    id,
+                    node: Box::new(node),
+                }
             }
             Some('[') => self.parse_char_class(),
             Some('\\') => {
@@ -87,27 +108,53 @@ impl<'a> Parser<'a> {
                 match self.advance() {
                     Some('d') => RegexNode::Digit,
                     Some('w') => RegexNode::Word,
+                    Some(c) if c.is_ascii_digit() && c != '0' => {
+                        let id = (c as u8 - b'0') as usize;
+                        RegexNode::BackRef { id }
+                    }
                     Some(c) => RegexNode::Literal(c),
                     None => RegexNode::Literal('\\'),
                 }
             }
-            Some('.') => { self.advance(); RegexNode::Dot }
-            Some('^') => { self.advance(); RegexNode::StartAnchor }
-            Some('$') => { self.advance(); RegexNode::EndAnchor }
-            Some(c) => { self.advance(); RegexNode::Literal(c) }
+            Some('.') => {
+                self.advance();
+                RegexNode::Dot
+            }
+            Some('^') => {
+                self.advance();
+                RegexNode::StartAnchor
+            }
+            Some('$') => {
+                self.advance();
+                RegexNode::EndAnchor
+            }
+            Some(c) => {
+                self.advance();
+                RegexNode::Literal(c)
+            }
             None => RegexNode::Seq(vec![]),
         }
     }
 
     fn parse_char_class(&mut self) -> RegexNode {
         let _ = self.advance(); // consume '['
-        let negated = if self.peek() == Some('^') { self.advance(); true } else { false };
+        let negated = if self.peek() == Some('^') {
+            self.advance();
+            true
+        } else {
+            false
+        };
         let mut chars_in_class = Vec::new();
         while let Some(ch) = self.peek() {
-            if ch == ']' { break; }
+            if ch == ']' {
+                break;
+            }
             chars_in_class.push(self.advance().unwrap());
         }
         let _ = self.expect(']');
-        RegexNode::CharClass { chars: chars_in_class, negated }
+        RegexNode::CharClass {
+            chars: chars_in_class,
+            negated,
+        }
     }
 }

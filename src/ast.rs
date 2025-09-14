@@ -6,6 +6,13 @@ pub enum RegexNode {
         node: Box<RegexNode>,
         kind: RepeatKind,
     },
+    Group {
+        id: usize,
+        node: Box<RegexNode>,
+    },
+    BackRef {
+        id: usize,
+    },
     StartAnchor,
     EndAnchor,
     Dot,

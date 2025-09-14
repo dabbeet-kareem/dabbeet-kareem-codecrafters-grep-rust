@@ -1,117 +1,145 @@
-use crate::ast::RegexNode;
+use crate::ast::{RegexNode, RepeatKind};
 
-// Return all possible end positions after matching `node` at `pos`.
-pub fn match_node(node: &RegexNode, input: &[char], pos: usize) -> Vec<usize> {
+#[derive(Clone, Debug)]
+struct MatchState { pos: usize, captures: Vec<Option<(usize, usize)>> }
+
+fn max_group_id(node: &RegexNode) -> usize {
+    match node {
+        RegexNode::Group { id, node } => (*id).max(max_group_id(node)),
+        RegexNode::Seq(v) | RegexNode::Alt(v) => v.iter().map(max_group_id).max().unwrap_or(0),
+        RegexNode::Repeat { node, .. } => max_group_id(node),
+        _ => 0,
+    }
+}
+
+fn match_with_state(node: &RegexNode, input: &[char], state: &MatchState) -> Vec<MatchState> {
     match node {
         RegexNode::Literal(c) => {
-            if pos < input.len() && input[pos] == *c {
-                vec![pos + 1]
+            if state.pos < input.len() && input[state.pos] == *c {
+                let mut next = state.clone(); next.pos += 1; vec![next]
             } else {
                 vec![]
             }
         }
         RegexNode::Dot => {
-            if pos < input.len() {
-                vec![pos + 1]
+            if state.pos < input.len() {
+                let mut next = state.clone(); next.pos += 1; vec![next]
             } else {
                 vec![]
             }
         }
         RegexNode::Digit => {
-            if pos < input.len() && input[pos].is_digit(10) {
-                vec![pos + 1]
+            if state.pos < input.len() && input[state.pos].is_digit(10) {
+                let mut next = state.clone(); next.pos += 1; vec![next]
             } else {
                 vec![]
             }
         }
         RegexNode::Word => {
-            if pos < input.len() && (input[pos].is_alphanumeric() || input[pos] == '_') {
-                vec![pos + 1]
+            if state.pos < input.len() && (input[state.pos].is_alphanumeric() || input[state.pos] == '_') {
+                let mut next = state.clone(); next.pos += 1; vec![next]
             } else {
                 vec![]
             }
         }
         RegexNode::CharClass { chars, negated } => {
-            if pos >= input.len() {
+            if state.pos >= input.len() {
                 return vec![];
             }
-            let contains = chars.contains(&input[pos]);
+            let contains = chars.contains(&input[state.pos]);
             if (*negated && !contains) || (!*negated && contains) {
-                vec![pos + 1]
+                let mut next = state.clone(); next.pos += 1; vec![next]
             } else {
                 vec![]
             }
         }
         RegexNode::StartAnchor => {
-            if pos == 0 {
-                vec![pos]
+            if state.pos == 0 {
+                vec![state.clone()]
             } else {
                 vec![]
             }
         }
         RegexNode::EndAnchor => {
-            if pos == input.len() {
-                vec![pos]
+            if state.pos == input.len() {
+                vec![state.clone()]
             } else {
                 vec![]
             }
         }
+        RegexNode::Group { id, node } => {
+            let start = state.pos;
+            let mut out = Vec::new();
+            for mut ns in match_with_state(node, input, state) {
+                let end = ns.pos;
+                if *id < ns.captures.len() { ns.captures[*id] = Some((start, end)); }
+                out.push(ns);
+            }
+            out
+        }
+        RegexNode::BackRef { id } => {
+            if *id >= state.captures.len() { return vec![]; }
+            if let Some((s, e)) = state.captures[*id] {
+                let len = e - s;
+                if state.pos + len <= input.len() && input[s..e] == input[state.pos..state.pos+len] {
+                    let mut next = state.clone(); next.pos += len; vec![next]
+                } else { vec![] }
+            } else { vec![] }
+        }
         RegexNode::Seq(nodes) => {
-            let mut positions = vec![pos];
+            let mut states = vec![state.clone()];
             for n in nodes {
-                let mut next_positions = Vec::new();
-                for p in positions {
-                    let res = match_node(n, input, p);
-                    next_positions.extend(res);
+                let mut next_states = Vec::new();
+                for st in &states {
+                    next_states.extend(match_with_state(n, input, st));
                 }
-                if next_positions.is_empty() {
+                if next_states.is_empty() {
                     return vec![];
                 }
-                next_positions.sort_unstable();
-                next_positions.dedup();
-                positions = next_positions;
+                next_states.sort_by_key(|s| s.pos);
+                next_states.dedup_by_key(|s| s.pos);
+                states = next_states;
             }
-            positions
+            states
         }
         RegexNode::Alt(branches) => {
-            let mut all_positions = Vec::new();
+            let mut all_states = Vec::new();
             for br in branches {
-                let res = match_node(br, input, pos);
-                all_positions.extend(res);
+                all_states.extend(match_with_state(br, input, state));
             }
-            all_positions.sort_unstable();
-            all_positions.dedup();
-            all_positions
+            all_states.sort_by_key(|s| s.pos);
+            all_states.dedup_by_key(|s| s.pos);
+            all_states
         }
         RegexNode::Repeat { node: inner, kind } => match kind {
-            crate::ast::RepeatKind::ZeroOrOne => {
-                let mut positions = vec![pos];
-                positions.extend(match_node(inner, input, pos));
-                positions.sort_unstable();
-                positions.dedup();
-                positions
+            RepeatKind::ZeroOrOne => {
+                let mut out = vec![state.clone()];
+                out.extend(match_with_state(inner, input, state));
+                out.sort_by_key(|s| s.pos);
+                out.dedup_by_key(|s| s.pos);
+                out
             }
-            crate::ast::RepeatKind::OneOrMore => {
-                let mut results = Vec::new();
-                let mut frontier = match_node(inner, input, pos);
+            RepeatKind::OneOrMore => {
+                let mut results: Vec<MatchState> = Vec::new();
+                let mut frontier = match_with_state(inner, input, state);
                 while !frontier.is_empty() {
-                    for p in &frontier {
-                        if !results.contains(p) {
-                            results.push(*p);
-                        }
+                    for st in &frontier {
+                        if !results.iter().any(|r| r.pos == st.pos) { results.push(st.clone()); }
                     }
                     let mut next = Vec::new();
-                    for p in &frontier {
-                        next.extend(match_node(inner, input, *p));
-                    }
-                    next.sort_unstable();
-                    next.dedup();
+                    for st in &frontier { next.extend(match_with_state(inner, input, st)); }
+                    next.sort_by_key(|s| s.pos);
+                    next.dedup_by_key(|s| s.pos);
                     frontier = next;
                 }
-                results.sort_unstable();
-                results.dedup();
                 results
             }
         },
     }
+}
+
+pub fn match_node(node: &RegexNode, input: &[char], start: usize) -> Vec<usize> {
+    let max_id = max_group_id(node);
+    let init = MatchState { pos: start, captures: vec![None; max_id + 1] };
+    match_with_state(node, input, &init).into_iter().map(|s| s.pos).collect()
 }
