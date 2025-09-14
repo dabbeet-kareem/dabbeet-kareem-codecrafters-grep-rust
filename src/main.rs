@@ -45,6 +45,14 @@ fn match_token(input_char: char, pattern: &str) -> Option<(usize, bool)> {
             };
             Some((2, matches))
         }
+        // match the ^ to check if the string starts with the pattern
+        Some('^') => {
+            if pattern.len() < 2 {
+                return None;
+            }
+            let matches = pattern.chars().nth(1).unwrap() == input_char;
+            Some((2, matches))
+        }
         Some('[') => match_character_group(input_char, pattern),
         Some(first_char) => Some((1, first_char == input_char)),
     }
